@@ -1,0 +1,42 @@
+version: '3.9'
+services:
+
+  frontend:
+    build: ./frontend
+    container_name: ai-chat-frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    networks:
+      - ai-chat-network
+
+  backend:
+    build: ./backend
+    container_name: ai-chat-backend
+    ports:
+      - "5000:5000"
+    environment:
+      - MONGO_URI=mongodb://mongo:27017/ai-chat
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+    depends_on:
+      - mongo
+    networks:
+      - ai-chat-network
+
+  mongo:
+    image: mongo:latest
+    container_name: ai-chat-mongo
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    networks:
+      - ai-chat-network
+
+volumes:
+  mongo_data:
+
+networks:
+  ai-chat-network:
+    driver: bridge
