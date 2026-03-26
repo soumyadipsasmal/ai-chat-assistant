@@ -2,7 +2,7 @@ pipeline {
     agent any
 
     environment {
-        IMAGE_NAME = "ai-chat-frontend"
+        IMAGE_NAME = "ai-chat-backend"
         IMAGE_TAG = "${BUILD_NUMBER}"
         DOCKER_HUB = credentials('DOCKER_HUB_CREDS')
         FULL_IMAGE = "docker.io/${DOCKER_HUB_USR}/${IMAGE_NAME}:${IMAGE_TAG}"
@@ -19,7 +19,7 @@ pipeline {
             steps {
                 sh '''
                 docker login -u ${DOCKER_HUB_USR} -p ${DOCKER_HUB_PSW}
-                docker build -t ${FULL_IMAGE} ./frontend 
+                docker build -t ${FULL_IMAGE} ./backend
                 docker push ${FULL_IMAGE}
                 '''
             }
