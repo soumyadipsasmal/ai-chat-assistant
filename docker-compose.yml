@@ -1,7 +1,6 @@
 version: '3.9'
 services:
 
-<<<<<<< HEAD
   frontend:
     build: ./frontend
     container_name: ai-chat-frontend
