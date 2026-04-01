@@ -1,97 +1,110 @@
 const express = require('express');
-const Anthropic = require('@anthropic-ai/sdk');
-const jwt = require('jsonwebtoken');
+const mongoose = require('mongoose');
+
+const { maxChatMessageLength } = require('../config/env');
+const auth = require('../middleware/auth');
 const Chat = require('../models/Chat');
+const { generateAssistantReply } = require('../services/ai.service');
+const { deriveChatTitle } = require('../utils/chat');
+const { validateChatMessage } = require('../utils/validation');
+
 const router = express.Router();
 
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+router.use(auth);
 
-// Auth middleware
-const auth = (req, res, next) => {
-  const token = req.headers.authorization?.split(' ')[1];
-  if (!token) return res.status(401).json({ message: 'No token' });
-  try {
-    req.user = jwt.verify(token, JWT_SECRET);
-    next();
-  } catch {
-    res.status(401).json({ message: 'Invalid token' });
+const validateChatId = (req, res, next) => {
+  if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+    return res.status(400).json({ message: 'Chat id is invalid.' });
   }
+
+  return next();
 };
 
-// Get all chats for user
-router.get('/', auth, async (req, res) => {
+router.get('/', async (req, res) => {
   try {
     const chats = await Chat.find({ userId: req.user.userId })
       .select('title createdAt updatedAt')
       .sort({ updatedAt: -1 });
-    res.json(chats);
-  } catch (err) {
-    res.status(500).json({ message: err.message });
+
+    return res.json(chats);
+  } catch (error) {
+    return res.status(500).json({ message: 'Unable to load chats right now.' });
   }
 });
 
-// Get single chat
-router.get('/:id', auth, async (req, res) => {
+router.get('/:id', validateChatId, async (req, res) => {
   try {
     const chat = await Chat.findOne({ _id: req.params.id, userId: req.user.userId });
-    if (!chat) return res.status(404).json({ message: 'Chat not found' });
-    res.json(chat);
-  } catch (err) {
-    res.status(500).json({ message: err.message });
+
+    if (!chat) {
+      return res.status(404).json({ message: 'Chat not found.' });
+    }
+
+    return res.json(chat);
+  } catch (error) {
+    return res.status(500).json({ message: 'Unable to load this chat right now.' });
   }
 });
 
-// Create new chat
-router.post('/new', auth, async (req, res) => {
+router.post('/new', async (req, res) => {
   try {
     const chat = new Chat({ userId: req.user.userId, messages: [] });
     await chat.save();
-    res.status(201).json(chat);
-  } catch (err) {
-    res.status(500).json({ message: err.message });
+    return res.status(201).json(chat);
+  } catch (error) {
+    return res.status(500).json({ message: 'Unable to create a new chat right now.' });
   }
 });
 
-// Send message
-router.post('/:id/message', auth, async (req, res) => {
+router.post('/:id/message', validateChatId, async (req, res) => {
   try {
-    const { message } = req.body;
-    const chat = await Chat.findOne({ _id: req.params.id, userId: req.user.userId });
-    if (!chat) return res.status(404).json({ message: 'Chat not found' });
+    const { errors, value } = validateChatMessage(req.body, maxChatMessageLength);
 
-    // Add user message
-    chat.messages.push({ role: 'user', content: message });
-
-    // Update title on first message
-    if (chat.messages.length === 1) {
-      chat.title = message.slice(0, 50) + (message.length > 50 ? '...' : '');
+    if (errors.length) {
+      return res.status(400).json({ errors, message: errors[0] });
     }
 
-    // Call Anthropic API
-    const response = await client.messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 1024,
-      messages: chat.messages.map(m => ({ role: m.role, content: m.content }))
-    });
+    const chat = await Chat.findOne({ _id: req.params.id, userId: req.user.userId });
 
-    const aiReply = response.content[0].text;
+    if (!chat) {
+      return res.status(404).json({ message: 'Chat not found.' });
+    }
+
+    chat.messages.push({ content: value.message, role: 'user' });
+
+    if (chat.messages.length === 1) {
+      chat.title = deriveChatTitle(value.message);
+    }
+
+    await chat.save();
+
+    const aiReply = await generateAssistantReply(chat.messages);
     chat.messages.push({ role: 'assistant', content: aiReply });
     await chat.save();
 
-    res.json({ reply: aiReply, chat });
-  } catch (err) {
-    res.status(500).json({ message: err.message });
+    return res.json({ chat, reply: aiReply });
+  } catch (error) {
+    return res.status(500).json({
+      message:
+        error.message || 'Unable to generate a reply right now. Please try again.',
+    });
   }
 });
 
-// Delete chat
-router.delete('/:id', auth, async (req, res) => {
+router.delete('/:id', validateChatId, async (req, res) => {
   try {
-    await Chat.findOneAndDelete({ _id: req.params.id, userId: req.user.userId });
-    res.json({ message: 'Chat deleted' });
-  } catch (err) {
-    res.status(500).json({ message: err.message });
+    const deletedChat = await Chat.findOneAndDelete({
+      _id: req.params.id,
+      userId: req.user.userId,
+    });
+
+    if (!deletedChat) {
+      return res.status(404).json({ message: 'Chat not found.' });
+    }
+
+    return res.json({ message: 'Chat deleted.' });
+  } catch (error) {
+    return res.status(500).json({ message: 'Unable to delete this chat right now.' });
   }
 });
 

@@ -73,3 +73,4 @@ Get your API key from: https://console.anthropic.com
 | DELETE | /api/chat/:id | Delete chat |
 
 Good luck! 💪
+> Important: this README still contains the original assignment brief. See [PROJECT_GUIDE.md](./PROJECT_GUIDE.md) for the updated architecture, setup, Docker flow, and interview summary.

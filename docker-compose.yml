@@ -1,13 +1,19 @@
 version: '3.9'
 services:
-
   frontend:
     build: ./frontend
     container_name: ai-chat-frontend
     ports:
       - "3001:80"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
     networks:
       - ai-chat-network
 
@@ -18,19 +24,35 @@ services:
       - "5000:5000"
     environment:
       - MONGO_URI=mongodb://mongo:27017/ai-chat
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - CLIENT_ORIGIN=${CLIENT_ORIGIN:-http://localhost:3001}
+      - JWT_SECRET=${JWT_SECRET:-dev-only-secret-change-me}
+      - AI_MODE=${AI_MODE:-mock}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
     depends_on:
-      - mongo
+      mongo:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:5000/health').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))\""]
+      interval: 30s
+      timeout: 10s
+      retries: 3
     networks:
       - ai-chat-network
 
   mongo:
-    image: mongo:latest
+    image: mongo:7
     container_name: ai-chat-mongo
     ports:
-      - "27017:27017"
+      - "127.0.0.1:27017:27017"
     volumes:
       - mongo_data:/data/db
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet --eval \"db.adminCommand('ping').ok\" || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
     networks:
       - ai-chat-network
 

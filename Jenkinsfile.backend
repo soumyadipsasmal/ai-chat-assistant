@@ -6,6 +6,7 @@ pipeline {
         IMAGE_TAG = "${BUILD_NUMBER}"
         DOCKER_HUB = credentials('DOCKER_HUB_CREDS')
         FULL_IMAGE = "docker.io/${DOCKER_HUB_USR}/${IMAGE_NAME}:${IMAGE_TAG}"
+        LATEST_IMAGE = "docker.io/${DOCKER_HUB_USR}/${IMAGE_NAME}:latest"
     }
 
     stages {
@@ -15,12 +16,24 @@ pipeline {
             }
         }
 
+        stage('Test Backend') {
+            steps {
+                dir('backend') {
+                    sh '''
+                    npm install
+                    npm test
+                    '''
+                }
+            }
+        }
+
         stage('Build Docker Image') {
             steps {
                 sh '''
-                docker login -u ${DOCKER_HUB_USR} -p ${DOCKER_HUB_PSW}
-                docker build -t ${FULL_IMAGE} ./backend
+                echo "${DOCKER_HUB_PSW}" | docker login -u "${DOCKER_HUB_USR}" --password-stdin
+                docker build -t ${FULL_IMAGE} -t ${LATEST_IMAGE} ./backend
                 docker push ${FULL_IMAGE}
+                docker push ${LATEST_IMAGE}
                 '''
             }
         }
